@@ -1,36 +1,5 @@
-# One ignore file for every stack in this repo.
-
-# OS / editor
-.DS_Store
-.idea/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-
-# Secrets
-.env
-.env.*
-!.env.example
-
-# Vale
-.vale/styles/
-
-# Python
-__pycache__/
-*.py[cod]
 .venv/
-build/
-dist/
-*.egg-info/
+__pycache__/
 .pytest_cache/
 .ruff_cache/
-.ipynb_checkpoints/
-htmlcov/
-.coverage
-coverage.xml
-
-# Node
-node_modules/
-.pnpm-store/
-*.tsbuildinfo
-coverage/
+.env

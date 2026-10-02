@@ -15,31 +15,21 @@ dependencies = [
   "ramascene",
   "uvicorn>=0.54",
 ]
-# PyPI rejects unknown classifiers, so this one makes an accidental upload fail.
-# Delete it (and set publish_to_pypi) when you do want to publish.
-classifiers = ["Private :: Do Not Upload"]
-
-# `ramascene-jobs` serves on HOST:PORT, as `python -m ramascene_jobs` does in the image.
 [project.scripts]
 ramascene-jobs = "ramascene_jobs.__main__:main"
 
 [dependency-groups]
 dev = [
   "pytest>=9",
-  "pytest-cov>=7",
   "ruff>=0.16",
   "ty>=0.0.63",
-  "httpx>=0.28", # fastapi.testclient (see filterwarnings below)
+  "httpx>=0.28", # fastapi.testclient
 ]
 
-# Research projects are packaged too, so notebooks can `import ramascene_jobs`
-# without sys.path games.
 [build-system]
 requires = ["uv_build>=0.11.31,<0.12.0"]
 build-backend = "uv_build"
 
-# uv_build derives the package dir from the normalized project.name, so pin it
-# for a module_name that differs.
 [tool.uv.build-backend]
 module-name = "ramascene_jobs"
 
@@ -50,8 +40,6 @@ extra-paths = [".."]
 [tool.uv.sources]
 ramascene = { path = "..", editable = true }
 
-# NOTE: self-contained ruff config, deliberately not extended from any shared base.
-# No target-version: ruff derives it from requires-python above.
 [tool.ruff]
 line-length = 120
 
@@ -83,18 +71,6 @@ max-args = 10
 addopts = ["-ra", "--strict-config", "--strict-markers", "--import-mode=importlib", "-m", "not engine"]
 markers = ["engine: runs the real engine on the EXIOBASE dataset (~1.65 GB per job); `pytest -m engine`"]
 testpaths = ["tests"]
-# NOTE: Starlette 1.x prefers httpx2 for its TestClient and warns on httpx. httpx is
-# kept because it works with every Starlette that FastAPI accepts; swap it for
-# httpx2 (and drop this filter) once the floor reaches a Starlette that has it.
+# Starlette 1.x warns that its TestClient prefers httpx2.
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
 
-# Coverage is opt-in, via `pytest --cov` (`just py-cov`), not addopts: it costs
-# every plain test run for a number you only look at now and then. No fail_under
-# until there is a suite worth setting one against.
-[tool.coverage.run]
-source = ["src"]
-branch = true
-
-[tool.coverage.report]
-show_missing = true
-exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
