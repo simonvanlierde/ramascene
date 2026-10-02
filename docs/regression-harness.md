@@ -14,13 +14,13 @@ pytest -v -rs
 ```
 
 That is the whole default suite. Without the dataset it reports
-`5 passed, 6 skipped, 18 deselected`:
+`5 passed, 5 skipped, 19 deselected`:
 
 - 5 passed: all four routes on synthetic matrices, plus `route_four` with two
   indicators, each compared with committed golden output (below);
-- 6 skipped: the 4 Octave-reference tests, which need the dataset, and the 2
-  modules that need Celery or Channels (`-rs` prints each reason);
-- 18 deselected: the `integration` tests described next.
+- 5 skipped: the 4 Octave-reference tests, which need the dataset, and the
+  Celery module (`-rs` prints each reason);
+- 19 deselected: the `integration` tests described next, and the websocket module.
 
 No environment variables are needed.
 
