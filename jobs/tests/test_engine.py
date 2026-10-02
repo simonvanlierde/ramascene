@@ -6,14 +6,13 @@ Deselected by default (`-m "not engine"` in pyproject.toml). Each job peaks near
     DATASETS_DIR=/path/to/datasets DATASETS_VERSION=v4 uv run pytest -m engine -s
 
 EXPLORER_RESULTS points at the explorer's committed data/results.json (default:
-the sibling checkout). JOB_LOCK_FILE, if set, is held around each engine run.
+the sibling checkout).
 """
 
 import json
 import math
 import os
 import time
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,14 +39,13 @@ PEAK_RSS_CEILING = 2 * 2**30
 
 
 @pytest.fixture(scope="module")
-def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
+def settings() -> Settings:
     """From the environment; skip unless the dataset is there."""
     settings = Settings.from_env()
     names = [f"{n}_{settings.datasets_version}.npy" for n in "ALYB"]
     if settings.datasets_dir is None or not all((settings.datasets_dir / "2011" / n).is_file() for n in names):
         pytest.skip("set DATASETS_DIR (and DATASETS_VERSION) to the 2011 EXIOBASE matrices")
-    jobs_dir = Path(os.environ.get("JOBS_DIR") or tmp_path_factory.mktemp("jobs"))
-    return replace(settings, jobs_dir=jobs_dir, max_queued=4)
+    return settings
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +64,7 @@ def explorer() -> dict[str, Any]:
 
 
 def run_job(client: TestClient, body: dict[str, Any], timeout: float = 3600) -> dict[str, Any]:
-    """Submit, then poll until done (the lock may make it wait for other work)."""
+    """Submit, then poll until done."""
     response = client.post("/jobs", json=body)
     assert response.status_code == 202, response.text
     deadline = time.monotonic() + timeout

@@ -54,14 +54,6 @@ class Settings:
     # One job at a time; this many more may wait. A full queue answers 503.
     max_queued: int = 4
     job_timeout_s: float = 900.0
-    # Optional: a lock file the worker holds (flock) around each engine run, to
-    # serialise it with other memory-heavy processes on a shared host.
-    job_lock: Path | None = None
-    # Optional: write each finished job's record here as <id>.json.
-    jobs_dir: Path | None = None
-    # Browser origins allowed to call the API, besides any loopback origin
-    # (http://127.0.0.1:<port>, http://localhost:<port>), which is always allowed.
-    cors_origins: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -79,9 +71,4 @@ class Settings:
             datasets_dir=path("DATASETS_DIR"),
             datasets_version=env.get("DATASETS_VERSION") or cls.datasets_version,
             engine_db=path("RAMASCENE_DB") or engine_db_default(),
-            max_queued=int(env.get("MAX_QUEUED_JOBS") or cls.max_queued),
-            job_timeout_s=float(env.get("JOB_TIMEOUT_S") or cls.job_timeout_s),
-            job_lock=path("JOB_LOCK_FILE"),
-            jobs_dir=path("JOBS_DIR"),
-            cors_origins=tuple(o.strip() for o in (env.get("CORS_ORIGINS") or "").split(",") if o.strip()),
         )

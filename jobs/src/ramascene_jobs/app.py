@@ -106,7 +106,6 @@ def create_app(
     app.add_exception_handler(RequestValidationError, invalid_request)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=list(settings.cors_origins),
         allow_origin_regex=LOOPBACK_ORIGINS,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],

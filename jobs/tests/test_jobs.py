@@ -43,7 +43,7 @@ def wait(client: TestClient, job_id: str, timeout: float = 20) -> dict[str, Any]
     pytest.fail(f"job {job_id} still {job['status']}")
 
 
-def test_a_job_runs_and_records_duration_and_peak_rss(client: TestClient, settings: Settings) -> None:
+def test_a_job_runs_and_records_duration_and_peak_rss(client: TestClient) -> None:
     """202 + Location, then succeeded, with the parent's own measurements."""
     response = client.post("/jobs", json=scenario())
     assert response.status_code == 202
@@ -58,8 +58,6 @@ def test_a_job_runs_and_records_duration_and_peak_rss(client: TestClient, settin
     echo = job["result"]["echo"]
     assert echo["scenario"]["model_details"][0]["techChange"] == [-20.0]
     assert echo["datasets_version"] == "v4"
-    record = json.loads((settings.jobs_dir / f"{job_id}.json").read_text())  # ty: ignore[unsupported-operator]
-    assert record["peak_rss_bytes"] == job["peak_rss_bytes"]
 
 
 @pytest.mark.parametrize(
@@ -83,20 +81,6 @@ def test_timeout_kills_the_worker() -> None:
     assert outcome.returncode == -9
     assert outcome.output is None
     assert outcome.peak_rss_bytes > 0
-
-
-def test_a_runner_error_fails_the_job_not_the_thread(settings: Settings, catalog: Catalog, tmp_path: Path) -> None:
-    """An unusable lock file fails each job; the thread keeps taking the next one."""
-    from dataclasses import replace  # noqa: PLC0415
-
-    from fastapi.testclient import TestClient  # noqa: PLC0415
-
-    settings = replace(settings, job_lock=tmp_path / "missing" / "lock")
-    with TestClient(create_app(settings, runner=JobRunner(settings, FAKE_WORKER), catalog=catalog)) as client:
-        for _ in range(2):
-            job = wait(client, client.post("/jobs", json=scenario()).json()["id"])
-            assert job["status"] == "failed"
-            assert job["error"].startswith("FileNotFoundError")
 
 
 def test_full_queue_is_503(settings: Settings, catalog: Catalog) -> None:
@@ -186,24 +170,16 @@ def test_unconfigured_engine_is_503(catalog: Catalog) -> None:
     assert "DATASETS_DIR" in response.json()["detail"]
 
 
-def test_cors_allows_loopback_and_configured_origins_only(settings: Settings, catalog: Catalog) -> None:
-    """The explorer on any loopback port, or an origin named in CORS_ORIGINS."""
-    from dataclasses import replace  # noqa: PLC0415
+def test_cors_allows_loopback_origins_only(client: TestClient) -> None:
+    """The explorer on any loopback port; any other origin gets no CORS header."""
 
-    from fastapi.testclient import TestClient  # noqa: PLC0415
+    def allowed(origin: str) -> str | None:
+        return client.get("/health", headers={"Origin": origin}).headers.get("access-control-allow-origin")
 
-    settings = replace(settings, cors_origins=("https://example.org",))
-    app = create_app(settings, runner=JobRunner(settings, FAKE_WORKER), catalog=catalog)
-    with TestClient(app) as client:
-
-        def allowed(origin: str) -> str | None:
-            return client.get("/health", headers={"Origin": origin}).headers.get("access-control-allow-origin")
-
-        assert allowed("http://127.0.0.1:8000") == "http://127.0.0.1:8000"
-        assert allowed("http://localhost:5173") == "http://localhost:5173"
-        assert allowed("https://example.org") == "https://example.org"
-        assert allowed("https://evil.example") is None
-        assert allowed("http://127.0.0.1.evil.example") is None
+    assert allowed("http://127.0.0.1:8000") == "http://127.0.0.1:8000"
+    assert allowed("http://localhost:5173") == "http://localhost:5173"
+    assert allowed("https://example.org") is None
+    assert allowed("http://127.0.0.1.evil.example") is None
 
 
 def test_job_span_and_metrics(settings: Settings, catalog: Catalog) -> None:

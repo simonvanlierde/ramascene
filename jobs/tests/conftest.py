@@ -31,11 +31,10 @@ def catalog() -> Catalog:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    """Engine configured (paths the fake worker never opens), jobs recorded to disk."""
+    """Engine configured (paths the fake worker never opens)."""
     return Settings(
         datasets_dir=tmp_path / "data",
         engine_db=tmp_path / "db.sqlite3",
-        jobs_dir=tmp_path / "jobs",
         job_timeout_s=10,
         max_queued=2,
     )

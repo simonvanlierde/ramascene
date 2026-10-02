@@ -1,14 +1,11 @@
 """The job queue: one worker thread, one engine subprocess at a time.
 
-Jobs live in memory; a restart forgets them (JOBS_DIR keeps a copy of each
-finished record on disk). The parent measures every run itself: wall-clock
+Jobs live in memory; a restart forgets them. The parent measures every run itself: wall-clock
 duration, and the child's peak RSS from wait4(2), which holds even when the
 child is killed before it can report anything.
 """
 
-import contextlib
 import datetime
-import fcntl
 import json
 import logging
 import os
@@ -20,14 +17,14 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from opentelemetry import metrics, trace
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
 
     from ramascene_jobs.config import Settings
     from ramascene_jobs.scenario import ScenarioRequest
@@ -73,20 +70,6 @@ class Outcome:
 
 class QueueFullError(Exception):
     """More jobs are waiting than the service accepts."""
-
-
-@contextlib.contextmanager
-def held(lock: Path | None) -> Iterator[None]:
-    """flock(2) on `lock` for the duration, if one is configured."""
-    if lock is None:
-        yield
-        return
-    with lock.open("a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def run_process(command: Sequence[str], job: dict[str, Any], timeout_s: float) -> Outcome:
@@ -177,7 +160,7 @@ class JobRunner:
             job = self.jobs[job_id]
             try:
                 self._run(job)
-            except Exception as e:  # a bad JOB_LOCK_FILE or JOBS_DIR fails the job, not the thread
+            except Exception as e:  # an unexpected error fails the job, not the thread
                 logger.exception("job %s", job.id)
                 if job.finished_at is None:
                     job.status, job.error, job.finished_at = FAILED, f"{type(e).__name__}: {e}", now()
@@ -187,18 +170,17 @@ class JobRunner:
         with self.tracer.start_as_current_span("ramascene_jobs.job") as span:
             span.set_attribute("job.id", job.id)
             span.set_attribute("job.steps", len(job.scenario["model_details"]))
-            with held(settings.job_lock):
-                job.status, job.started_at = "running", now()
-                payload = {
-                    "scenario": job.scenario,
-                    "datasets_dir": str(settings.datasets_dir),
-                    "datasets_version": settings.datasets_version,
-                    "engine_db": str(settings.engine_db),
-                }
-                try:
-                    outcome = run_process(self.command, payload, settings.job_timeout_s)
-                except Exception as e:  # noqa: BLE001 - the job fails, the runner goes on
-                    outcome = Outcome(-1, 0.0, 0, {"error": f"{type(e).__name__}: {e}"})
+            job.status, job.started_at = "running", now()
+            payload = {
+                "scenario": job.scenario,
+                "datasets_dir": str(settings.datasets_dir),
+                "datasets_version": settings.datasets_version,
+                "engine_db": str(settings.engine_db),
+            }
+            try:
+                outcome = run_process(self.command, payload, settings.job_timeout_s)
+            except Exception as e:  # noqa: BLE001 - the job fails, the runner goes on
+                outcome = Outcome(-1, 0.0, 0, {"error": f"{type(e).__name__}: {e}"})
             job.duration_s, job.peak_rss_bytes = outcome.duration_s, outcome.peak_rss_bytes
             output = outcome.output or {}
             if outcome.returncode == 0 and output.get("results") is not None:
@@ -215,6 +197,3 @@ class JobRunner:
         attributes = {"job.status": job.status}
         self.duration.record(job.duration_s, attributes)
         self.peak_rss.record(job.peak_rss_bytes, attributes)
-        if settings.jobs_dir is not None:
-            settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-            (settings.jobs_dir / f"{job.id}.json").write_text(json.dumps(asdict(job), indent=1) + "\n")
