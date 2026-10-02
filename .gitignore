@@ -34,3 +34,6 @@ __pycache__/
 /venv
 
 data.zi*
+# editor lock files and logs
+.~lock.*#
+*.log
