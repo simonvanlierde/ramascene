@@ -503,5 +503,9 @@ def get_numpy_objects(year, object_name):
             numpy object: numpy object of the given object_name
     """
     location = os.path.join(settings.DATASET_DIR, '') + os.path.join(str(year), '')
-    object = np.load(location + os.path.join(os.path.join(object_name + str('_') + settings.DATASET_VERSION) + ".npy"))
+    # L and B are only read, so map them: no 0.77 GB copy per job, and the
+    # workers share one copy in the page cache. A and Y are modified in place.
+    mmap_mode = "r" if object_name in ("L", "B") else None
+    object = np.load(location + os.path.join(os.path.join(object_name + str('_') + settings.DATASET_VERSION) + ".npy"),
+                     mmap_mode=mmap_mode)
     return object
