@@ -1,0 +1,42 @@
+# Keep the build context small: everything here is either rebuilt in the image,
+# irrelevant to it, or a secret. Each image carries its own next to its
+# Dockerfile, since Docker reads this from the root of the build context.
+
+# VCS / tooling metadata
+.git
+.github
+.copier-answers.yml
+
+# Rebuilt inside the image
+.venv
+build
+dist
+*.egg-info
+
+# Test, lint, and cache artifacts
+__pycache__
+.pytest_cache
+.ruff_cache
+.ipynb_checkpoints
+htmlcov
+.coverage
+coverage.xml
+
+# Not in the image, and `COPY . /app` would otherwise put them in the layer hash:
+# touching a test or a notebook would re-run the whole dependency install, which
+# `docker compose up --watch` does on every source change.
+tests
+notebooks
+data
+.editorconfig
+.pre-commit-config.yaml
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Docker meta files themselves
+Dockerfile
+.dockerignore
+compose.yaml

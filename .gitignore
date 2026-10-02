@@ -37,3 +37,6 @@ data.zi*
 # editor lock files and logs
 .~lock.*#
 *.log
+
+# editable installs of the engine package
+*.egg-info/

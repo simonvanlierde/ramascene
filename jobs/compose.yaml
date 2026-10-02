@@ -1,0 +1,49 @@
+# `docker compose up --watch` rebuilds on source changes. No live reload: a
+# runtime image ships the built artifact, not its ./src.
+#
+# Ports are loopback-bound because Docker's iptables rules run ahead of the host
+# firewall, so a bare "8020:8020" reaches the LAN even on a deny-by-default
+# machine. Drop the 127.0.0.1 when you do want a service published.
+name: ramascene-jobs
+
+services:
+  app:
+    build:
+      context: .
+      # The RaMa-Scene checkout this folder lives in; the Dockerfile copies the
+      # engine package and its database from it.
+      additional_contexts:
+        engine: ${ENGINE_DIR:-..}
+      args:
+        ENGINE_COMMIT: ${ENGINE_COMMIT:-unknown}
+        ENGINE_BRANCH: ${ENGINE_BRANCH:-unknown}
+    ports:
+      - "127.0.0.1:8020:8020"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Telemetry stays off unless this names an OTLP/HTTP collector, for example
+      # http://otel-collector:4318 on a shared Docker network. Empty means unset.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ramascene-jobs
+      # For a collector that wants a token, e.g. Authorization=Bearer <token>.
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+    volumes:
+      # $DATASETS_DIR/2011/{A,L,Y,B}_v4.npy, read-only.
+      - ${DATASETS_DIR:?set DATASETS_DIR to the EXIOBASE matrices}:/data:ro
+    # One engine job peaks near 1.65 GB; the limit keeps a runaway job from
+    # taking the host down with it (the job fails, the API stays up).
+    mem_limit: 3g
+    restart: unless-stopped
+    # The image already runs as a non-root uid; these stop it from regaining what
+    # it dropped. Free here: the entrypoint needs no capability to bind 8020.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    develop:
+      watch:
+        - action: rebuild
+          path: ./src
+        - action: rebuild
+          path: ./uv.lock
