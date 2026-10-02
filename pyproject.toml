@@ -1,0 +1,28 @@
+# Packaging for the calculation engine only: `ramascene` (analyze, modelling,
+# querymanagement and the models they read labels through), so another project
+# can depend on it by path instead of putting this checkout on sys.path.
+#
+# The web app's stack (Celery, Channels, daphne, webpack) stays in
+# requirements.txt and is not a dependency here; importing ramascene.tasks or
+# ramascene.consumers still needs it. The engine needs Django for the ORM and a
+# configured settings module (see conftest.py), and the labels come from the
+# checked-in db.sqlite3 at the repo root, which is not part of the package.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ramascene"
+version = "0.3"
+description = "RaMa-Scene calculation engine (EXIOBASE scenario modelling)"
+readme = "README.md"
+requires-python = ">=3.12"
+license-files = ["LICENSE"]
+dependencies = ["numpy>=2,<3", "scipy>=1.14,<2", "django>=5.2,<5.3"]
+
+[tool.setuptools.packages.find]
+include = ["ramascene", "ramascene.*"]
+
+[tool.setuptools.package-data]
+# The Octave reference fixtures the regression harness reads.
+"ramascene.tests" = ["validation_files/*.csv", "synthetic_golden.json"]
