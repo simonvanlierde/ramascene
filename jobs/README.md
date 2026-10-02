@@ -14,15 +14,18 @@ Submit a scenario in the explorer's format, poll for the result:
 Each job runs in its own subprocess, one at a time, so the engine's ~1.65 GB
 peak never overlaps another job's and is returned to the OS afterwards. The API
 process never imports the engine. The parent measures each job's duration and
-peak RSS itself (`wait4`), and reports both as OpenTelemetry histograms
-(`ramascene_jobs.job.duration`, `ramascene_jobs.job.peak_rss`) and a
-`ramascene_jobs.job` span when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+peak RSS itself (`wait4`), returns both in the job record, and reports both as
+OpenTelemetry histograms (`ramascene_jobs.job.duration`,
+`ramascene_jobs.job.peak_rss`) and a `ramascene_jobs.job` span when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set. Jobs live in
+memory: a restart forgets them. At most 4 jobs wait; a job is killed after 900 s.
+Browsers may call the API from loopback origins (`http://127.0.0.1:<port>`,
+`http://localhost:<port>`) only.
 
 Configuration (environment): `DATASETS_DIR`, `DATASETS_VERSION` (default `v4`),
-`RAMASCENE_DB` (default: the engine checkout's `db.sqlite3`), `MAX_QUEUED_JOBS`
-(4), `JOB_TIMEOUT_S` (900), `JOB_LOCK_FILE` (flock held around each engine run),
-`JOBS_DIR` (write each finished job as JSON), `CORS_ORIGINS` (loopback origins
-are always allowed), and the template's `HOST`, `PORT`, `OTEL_*`.
+`RAMASCENE_DB` (default: the engine checkout's `db.sqlite3`), `HOST` (default
+`127.0.0.1`), `PORT` (default `8020`), and `OTEL_EXPORTER_OTLP_ENDPOINT` and
+`OTEL_SERVICE_NAME` (default `ramascene-jobs`).
 
 The engine is a path dependency on the RaMa-Scene checkout this folder lives in
 (`..`), packaged by its `pyproject.toml`.
@@ -41,12 +44,17 @@ change must reproduce all 122 Octave reference values the engine ships.
 DATASETS_DIR=/path/to/datasets uv run pytest -m engine -s
 ```
 
+On 2 October 2026 both tests passed: the scenario matched `data/results.json`
+to 5.3e-15 relative, the 122 Octave values matched within 1e-6 (largest
+relative difference 4.2e-8), and on a 32-core machine each job took under 2 s
+with a peak RSS of 1.53 GiB.
+
 ## Development
 
 ```sh
 uv sync
 just             # lists the tasks
-just check       # lint, types and tests
+just check       # lint, format check, types and tests
 just up          # build and run the service in its container (compose project ramascene_jobs)
 ```
 
