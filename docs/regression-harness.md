@@ -9,15 +9,12 @@ checked-in `db.sqlite3` and runs no migrations.
 ## Run it
 
 ```text
-pip install 'numpy>=1.24,<3' 'django>=5.2,<5.3' 'pytest>=8,<10'   # enough; requirements.txt adds the web stack
+pip install -r requirements.txt -r requirements-dev.txt   # the locked set CI installs
 pytest -v -rs
 ```
 
-That is the whole default suite. With only those three packages and no
-dataset it reports `11 passed, 15 skipped, 18 deselected` (with
-`requirements.txt` and `requirements-dev.txt` installed, Channels imports, so
-the websocket module is deselected rather than skipped: 14 skipped, 19
-deselected):
+That is the whole default suite. With no dataset it reports
+`14 passed, 15 skipped, 19 deselected`:
 
 - 5 passed: all four routes on synthetic matrices, plus `route_four` with two
   indicators, each compared with committed golden output (below);
@@ -25,12 +22,14 @@ deselected):
   with `I - A`, one test each for nan and inf (`"1e400"`) technical change and nan final
   demand (`test_non_finite_technical_change_raises`,
   `test_infinite_technical_change_raises`, `test_non_finite_final_demand_raises`);
-- 3 passed: the scenario path's `LeontiefSolve` on small matrices: it matches
-  `inv(I - A)` for `L.dot` and `L.T.dot`, is built over `A`'s buffer, and
-  rejects a non-finite solution;
-- 15 skipped: the 13 tests that need the dataset (below), and the 2 modules
-  that need Celery or Channels (`-rs` prints each reason);
-- 18 deselected: the `integration` tests described next.
+- 6 passed: the scenario solve on small matrices. The low-rank update of the
+  published `L` and the full factorization both match `inv(I - A)` for
+  `L.dot` and `L.T.dot`, including a change to a 3 x 2 block; the update falls
+  back to the factorization when `L` does not invert `A`; a non-finite
+  solution is rejected;
+- 15 skipped: the 14 tests that need the dataset (below), and the Celery
+  module (`-rs` prints each reason);
+- 19 deselected: the `integration` tests described next, and the websocket module.
 
 No environment variables are needed.
 
@@ -47,12 +46,9 @@ pytest -m integration        # expect failures: they need the infrastructure in 
 ```
 
 Running it touches the checked-in database: `ramascene/__init__.py` puts SQLite
-into WAL mode, so the first connection checkpoints and removes the tracked
-`db.sqlite3-wal` and `db.sqlite3-shm` files and rewrites `db.sqlite3`. The
-tracked WAL holds one committed transaction (a September 2019 job and its task
-result), which the checkpoint folds into `db.sqlite3`; the lookup tables the
-harness reads are the same either way. `git checkout -- db.sqlite3*` restores
-the tracked state after a run.
+into WAL mode, so connections create `db.sqlite3-wal` and `db.sqlite3-shm` next
+to it. Both are ignored by git, and a test run leaves the tracked `db.sqlite3`
+unchanged.
 
 ## The dataset
 

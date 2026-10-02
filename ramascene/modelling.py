@@ -23,13 +23,15 @@ class Modelling:
         self.Y = self.Y_data.copy()
         # if we need to load A
         if True in self.load_A:
-            self.A = querymanagement.get_numpy_objects(self.year, "A")
+            # copy-on-write: an intervention copies only the pages it changes
+            self.A = querymanagement.get_numpy_objects(self.year, "A", mmap_mode="c")
         # else just use L
         else:
             self.L = querymanagement.get_numpy_objects(self.year, "L")
 
         # loop over the different interventions, such that we can apply changes individually
         A_modified = False
+        changed_rows, changed_columns = [], []
 
         # unpack data structures
         products = self.unpack(self.ready_model_details.items(), 'product')
@@ -79,18 +81,16 @@ class Modelling:
                 columns = ids.get_produced_product_ids()
 
                 self.A = self.model_intermediates(self.A, rows, columns, tech_change)
+                changed_rows.append(rows)
+                changed_columns.append(columns)
 
                 A_modified = True
 
         if A_modified is True:
-            # (I - A) over A's own buffer: A is not read after this point.
-            # NOTE: float64 to keep the promotion the np.identity() term forced;
-            # a float32 A gets one copy here.
-            M = self.A.astype(np.float64, copy=False)
-            np.negative(M, out=M)
-            M[np.diag_indices_from(M)] += 1
+            self.L = scenario_leontief(self.year, self.A,
+                                       np.unique(np.concatenate(changed_rows)),
+                                       np.unique(np.concatenate(changed_columns)))
             self.A = None
-            self.L = LeontiefSolve(M)
         # else the original L, as loaded above, is already in self.L
 
         return self.Y, self.L
@@ -135,6 +135,68 @@ class Modelling:
         # remove outer list
         [array_obj] = array_obj
         return array_obj
+
+
+# Above this many changed rows, factorizing I - A is cheaper than the update.
+# NOTE: rough break-even on the 2011 data; the residual check covers accuracy.
+LOW_RANK_MAX = 2000
+
+
+def scenario_leontief(year, A, rows, columns):
+    """The Leontief inverse of the scenario's A, which differs from the
+    published A only in the block A[rows, columns].
+
+    Updates the published L by Woodbury when the block is small and the
+    result solves (I - A) x = y; otherwise factorizes I - A.
+    """
+    if len(rows) <= LOW_RANK_MAX:
+        L = querymanagement.get_numpy_objects(year, "L")
+        published = querymanagement.get_numpy_objects(year, "A", mmap_mode="r")
+        change = A[np.ix_(rows, columns)] - published[np.ix_(rows, columns)]
+        update = LowRankLeontief(L, rows, columns, change)
+        # Woodbury is exact only if the published L inverts the published A.
+        y = np.ones((A.shape[0], 1))
+        x = update.dot(y)
+        if np.linalg.norm(x - A @ x - y) <= 1e-9 * np.linalg.norm(y):
+            return update
+    # (I - A) over A's own buffer (a copy-on-write map, so this copies it once).
+    M = np.asarray(A, dtype=np.float64)
+    np.negative(M, out=M)
+    M[np.diag_indices_from(M)] += 1
+    return LeontiefSolve(M)
+
+
+class LowRankLeontief:
+    """L' = (I - A')^-1 for A' = A + U D V^T, where U and V select the changed
+    rows and columns and D is the change, from the published L = (I - A)^-1:
+
+        L' = L + L[:, rows] S^-1 D L[columns, :],   S = I - D L[columns, rows]
+
+    One product with L per call and an r x r solve, instead of factorizing
+    the full n x n matrix.
+    """
+
+    def __init__(self, L, rows, columns, change, _S=None, _trans=False):
+        self.L, self.rows, self.columns, self.change = L, rows, columns, change
+        self.S = _S if _S is not None else scipy.linalg.lu_factor(
+            np.eye(len(rows)) - change @ L[np.ix_(columns, rows)])
+        self.trans = _trans
+
+    @property
+    def T(self):
+        return LowRankLeontief(self.L, self.rows, self.columns, self.change, self.S, not self.trans)
+
+    def dot(self, y):
+        L, rows, columns, D = self.L, self.rows, self.columns, self.change
+        if not self.trans:
+            x0 = L @ y
+            x = x0 + L[:, rows] @ scipy.linalg.lu_solve(self.S, D @ x0[columns])
+        else:
+            x0 = L.T @ y
+            x = x0 + L[columns, :].T @ (D.T @ scipy.linalg.lu_solve(self.S, x0[rows], trans=1))
+        if not np.isfinite(x).all():
+            raise ValueError("non-finite Leontief solution; check the technical-change inputs")
+        return x
 
 
 class LeontiefSolve:

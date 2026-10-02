@@ -19,7 +19,8 @@ from django.conf import settings
 
 from ramascene import querymanagement
 from ramascene.analyze import Analyze
-from ramascene.modelling import LeontiefSolve, Modelling
+from ramascene import modelling
+from ramascene.modelling import LeontiefSolve, LowRankLeontief, Modelling
 from ramascene.tests.validation_data import FILES_TO_TEST_AGAINST, VALIDATION_DIR, open_validation_file
 
 COUNTRY_CNT = 49
@@ -66,7 +67,8 @@ def real_matrices():
 @pytest.fixture(scope="session")
 def real_scenario_matrices(real_matrices):
     """(Y, B, L) with L from the scenario path: A loaded, a 0% intermediate
-    change applied, then (I - A) x = y solved instead of reading the published L."""
+    change applied, then (I - A) x = y solved instead of reading the published L.
+    The low-rank update is switched off, so this exercises the full factorization."""
     missing = [path for path in dataset_paths(names=("A",)) if not os.path.exists(path)]
     if missing:
         pytest.skip("EXIOBASE dataset missing: {}. See docs/regression-harness.md".format(missing[0]))
@@ -77,8 +79,29 @@ def real_scenario_matrices(real_matrices):
          "techChange": [["0"]], "identifiers": ["INTERMEDIATE"]},
         Y, [True], VALIDATION_YEAR, None,
     )
-    _, L = model.apply_model()
+    low_rank_max, modelling.LOW_RANK_MAX = modelling.LOW_RANK_MAX, 0
+    try:
+        _, L = model.apply_model()
+    finally:
+        modelling.LOW_RANK_MAX = low_rank_max
+    assert isinstance(L, LeontiefSolve)
     return Y, B, L
+
+
+def test_low_rank_update_matches_full_solve(real_matrices):
+    """A -20% change of secondary steel (calc index 104) into other transport
+    equipment (123), all 49 regions each: the Woodbury update of the published
+    L against factorizing I - A."""
+    Y, _, _ = real_matrices
+    rows = 104 + PRODUCT_CNT * np.arange(COUNTRY_CNT)
+    columns = 123 + PRODUCT_CNT * np.arange(COUNTRY_CNT)
+    A = querymanagement.get_numpy_objects(VALIDATION_YEAR, "A", mmap_mode="c")
+    A[np.ix_(rows, columns)] *= 0.8
+    update = modelling.scenario_leontief(VALIDATION_YEAR, A, rows, columns)
+    assert isinstance(update, LowRankLeontief)
+    full = LeontiefSolve(np.eye(MATRIX_ROWS) - A)
+    for got, want in ((update.dot(Y), full.dot(Y)), (update.T.dot(Y[:, :1]), full.T.dot(Y[:, :1]))):
+        np.testing.assert_allclose(got, want, rtol=0, atol=1e-12 * np.abs(want).max())
 
 
 @pytest.fixture(scope="session")
@@ -213,7 +236,9 @@ def model_with(monkeypatch, identifier, tech_change):
     selected everywhere, so an intermediate change hits the diagonal A[0, 0]."""
     n = 50
     A = np.random.default_rng(0).random((n, n)) * 1e-3
-    monkeypatch.setattr(querymanagement, "get_numpy_objects", lambda year, name: A)
+    published = {"A": A, "L": np.linalg.inv(np.eye(n) - A)}
+    monkeypatch.setattr(querymanagement, "get_numpy_objects",
+                        lambda year, name, mmap_mode=None: published[name].copy())
     one = [[0]]
     return Modelling(
         {"product": one, "consumedBy": one, "originReg": one, "consumedReg": one,
@@ -254,20 +279,57 @@ def test_leontief_solve_matches_inverse():
     np.testing.assert_allclose(L.T.dot(y), inverse.T @ y, rtol=1e-12)
 
 
-def test_intermediate_change_solves_over_A_in_place(monkeypatch):
-    """(I - A) reuses A's buffer, the model drops its reference to A, and the
-    result is the Leontief inverse of the changed A."""
+@pytest.mark.parametrize("low_rank_max", [modelling.LOW_RANK_MAX, 0])
+def test_intermediate_change_matches_inverse(monkeypatch, low_rank_max):
+    """Both scenario paths, the low-rank update of the published L and the full
+    factorization, give the Leontief inverse of the changed A."""
+    monkeypatch.setattr(modelling, "LOW_RANK_MAX", low_rank_max)
     model = model_with(monkeypatch, "INTERMEDIATE", "-20")
-    A = querymanagement.get_numpy_objects(VALIDATION_YEAR, "A")
-    changed = A.copy()
+    changed = querymanagement.get_numpy_objects(VALIDATION_YEAR, "A")
     changed[0, 0] *= 0.8
-    expected = np.linalg.inv(np.eye(len(A)) - changed)
-    y = np.random.default_rng(2).random((len(A), 2))
+    expected = np.linalg.inv(np.eye(len(changed)) - changed)
+    y = np.random.default_rng(2).random((len(changed), 2))
     _, L = model.apply_model()
     assert model.A is None
-    assert np.shares_memory(L.lu[0], A)
+    assert isinstance(L, LowRankLeontief if low_rank_max else LeontiefSolve)
     np.testing.assert_allclose(L.dot(y), expected @ y, rtol=1e-12)
     np.testing.assert_allclose(L.T.dot(y), expected.T @ y, rtol=1e-12)
+
+
+def test_low_rank_update_of_a_block_matches_inverse(monkeypatch):
+    """A change to a 3 x 2 block, so S is not 1 x 1 and a slip in the
+    transposed formula (L.T.dot, route one) changes the result."""
+    n = 50
+    rng = np.random.default_rng(4)
+    A = rng.random((n, n)) * 1e-3
+    published = {"A": A, "L": np.linalg.inv(np.eye(n) - A)}
+    monkeypatch.setattr(querymanagement, "get_numpy_objects",
+                        lambda year, name, mmap_mode=None: published[name].copy())
+    rows, columns = np.array([0, 3, 7]), np.array([1, 4])
+    changed = A.copy()
+    changed[np.ix_(rows, columns)] *= 0.8
+    L = modelling.scenario_leontief(VALIDATION_YEAR, changed.copy(), rows, columns)
+    assert isinstance(L, LowRankLeontief)
+    expected = np.linalg.inv(np.eye(n) - changed)
+    y = rng.random((n, 2))
+    np.testing.assert_allclose(L.dot(y), expected @ y, rtol=1e-12)
+    np.testing.assert_allclose(L.T.dot(y), expected.T @ y, rtol=1e-12)
+
+
+def test_low_rank_update_falls_back_when_L_does_not_invert_A(monkeypatch):
+    """Woodbury needs the published L to be (I - A)^-1. If it is not, the
+    residual check sends the job to the full factorization."""
+    n = 50
+    A = np.random.default_rng(3).random((n, n)) * 1e-3
+    published = {"A": A, "L": np.eye(n)}  # not the inverse of I - A
+    monkeypatch.setattr(querymanagement, "get_numpy_objects",
+                        lambda year, name, mmap_mode=None: published[name].copy())
+    changed = A.copy()
+    changed[0, 0] *= 0.8
+    L = modelling.scenario_leontief(VALIDATION_YEAR, changed.copy(), np.array([0]), np.array([0]))
+    assert isinstance(L, LeontiefSolve)
+    y = np.ones((n, 1))
+    np.testing.assert_allclose(L.dot(y), np.linalg.solve(np.eye(n) - changed, y), rtol=1e-12)
 
 
 def test_non_finite_leontief_solution_raises():
