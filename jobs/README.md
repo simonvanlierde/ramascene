@@ -52,4 +52,4 @@ just up          # build and run the service in its container (compose project r
 
 ## License
 
-Not licensed for redistribution.
+GPL-3.0-or-later, the same as the rest of RaMa-Scene; see [LICENSE](../LICENSE).

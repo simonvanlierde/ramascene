@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Thin job API around the RaMa-Scene engine: one scenario per job, one job at a time"
 readme = "README.md"
 requires-python = ">=3.14"
+license = "GPL-3.0-or-later"
 authors = [{ name = "Simon van Lierde", email = "simonvanlierde@gmail.com" }]
 dependencies = [
   "fastapi>=0.141",
