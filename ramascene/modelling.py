@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.linalg
 from ramascene import productindexmanger as pim
 from ramascene import querymanagement
 
@@ -137,23 +138,23 @@ class Modelling:
 
 
 class LeontiefSolve:
-    """L = (I - A)^-1 without forming it. Supports the two ways the routes use
-    L, L.dot(y) and L.T.dot(y), by solving (I - A) x = y on each call.
-
-    Each call factorizes M again (np.linalg.solve). That costs about a third of
-    an inversion, so it pays as long as a route makes at most two calls; each
-    route makes one.
+    """L = (I - A)^-1 without forming it. M = I - A is LU-factorized once, in
+    its own buffer, and the factors serve both ways the routes use L,
+    L.dot(y) and L.T.dot(y).
     """
 
-    def __init__(self, M):
-        self.M = M
+    def __init__(self, M, _lu=None, _trans=1):
+        # M.T is Fortran-ordered, so LAPACK factorizes it in place instead of
+        # copying 0.77 GB. These are the factors of M^T: trans=1 solves M x = y.
+        self.lu = _lu if _lu is not None else scipy.linalg.lu_factor(M.T, overwrite_a=True, check_finite=False)
+        self.trans = _trans
 
     @property
     def T(self):
-        return LeontiefSolve(self.M.T)
+        return LeontiefSolve(None, self.lu, 1 - self.trans)
 
     def dot(self, y):
-        x = np.linalg.solve(self.M, y)
+        x = scipy.linalg.lu_solve(self.lu, y, trans=self.trans, check_finite=False)
         # Backstop for a non-finite A that no intervention introduced (the
         # changes are checked in model_intermediates).
         if not np.isfinite(x).all():

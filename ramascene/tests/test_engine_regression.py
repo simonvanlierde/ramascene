@@ -248,9 +248,10 @@ def test_leontief_solve_matches_inverse():
     M = -rng.random((n, n)) * 1e-2
     M[np.diag_indices(n)] += 1
     y = rng.random((n, 3))
+    inverse = np.linalg.inv(M)  # before LeontiefSolve factorizes M in place
     L = LeontiefSolve(M)
-    np.testing.assert_allclose(L.dot(y), np.linalg.inv(M) @ y, rtol=1e-12)
-    np.testing.assert_allclose(L.T.dot(y), np.linalg.inv(M).T @ y, rtol=1e-12)
+    np.testing.assert_allclose(L.dot(y), inverse @ y, rtol=1e-12)
+    np.testing.assert_allclose(L.T.dot(y), inverse.T @ y, rtol=1e-12)
 
 
 def test_intermediate_change_solves_over_A_in_place(monkeypatch):
@@ -264,7 +265,7 @@ def test_intermediate_change_solves_over_A_in_place(monkeypatch):
     y = np.random.default_rng(2).random((len(A), 2))
     _, L = model.apply_model()
     assert model.A is None
-    assert np.shares_memory(L.M, A)
+    assert np.shares_memory(L.lu[0], A)
     np.testing.assert_allclose(L.dot(y), expected @ y, rtol=1e-12)
     np.testing.assert_allclose(L.T.dot(y), expected.T @ y, rtol=1e-12)
 

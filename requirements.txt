@@ -90,7 +90,9 @@ msgpack==1.2.2
     #   autobahn
     #   channels-redis
 numpy==2.5.3
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   scipy
 packaging==26.3
     # via
     #   incremental
@@ -106,6 +108,8 @@ python-dateutil==2.9.0.post0
 redis==8.1.0
     # via channels-redis
 requests==2.34.2
+    # via -r requirements.in
+scipy==1.18.1
     # via -r requirements.in
 service-identity==26.1.0
     # via twisted

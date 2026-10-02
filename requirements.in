@@ -10,5 +10,6 @@ django-cors-headers>=4.7
 # keep in step with webpack-bundle-tracker in package.json
 django-webpack-loader>=3.2,<3.3
 numpy>=2,<3
+scipy>=1.14,<2
 # used by the webapp healthcheck in docker-compose.yml
 requests>=2.32,<3
