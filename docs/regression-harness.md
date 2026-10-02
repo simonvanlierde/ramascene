@@ -13,23 +13,8 @@ pip install -r requirements.txt -r requirements-dev.txt   # the locked set CI in
 pytest -v -rs
 ```
 
-That is the whole default suite. With no dataset it reports
-`14 passed, 15 skipped, 19 deselected`:
-
-- 5 passed: all four routes on synthetic matrices, plus `route_four` with two
-  indicators, each compared with committed golden output (below);
-- 3 passed: scenario modelling rejects a non-finite change before it solves
-  with `I - A`, one test each for nan and inf (`"1e400"`) technical change and nan final
-  demand (`test_non_finite_technical_change_raises`,
-  `test_infinite_technical_change_raises`, `test_non_finite_final_demand_raises`);
-- 6 passed: the scenario solve on small matrices. The low-rank update of the
-  published `L` and the full factorization both match `inv(I - A)` for
-  `L.dot` and `L.T.dot`, including a change to a 3 x 2 block; the update falls
-  back to the factorization when `L` does not invert `A`; a non-finite
-  solution is rejected;
-- 15 skipped: the 14 tests that need the dataset (below), and the Celery
-  module (`-rs` prints each reason);
-- 19 deselected: the `integration` tests described next, and the websocket module.
+That is the whole default suite. Without the dataset, the tests that need it
+skip, and `-rs` prints why; each test's docstring says what it checks.
 
 No environment variables are needed.
 
