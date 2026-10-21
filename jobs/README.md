@@ -17,7 +17,9 @@ process never imports the engine. The parent measures each job's duration and
 peak RSS itself (`wait4`), returns both in the job record, and reports both as
 OpenTelemetry histograms (`ramascene_jobs.job.duration`,
 `ramascene_jobs.job.peak_rss`) and a `ramascene_jobs.job` span when
-`OTEL_EXPORTER_OTLP_ENDPOINT` is set. Jobs live in
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set. The API hashes the four dataset files
+once, when it starts, and again only when one changes (size or modification
+time); the worker gets the hashes with the job. Jobs live in
 memory: a restart forgets them, and only the latest 20 finished jobs are kept
 (a result with flows takes about 7 MB), so older ones answer 404. At most 4
 jobs wait; a job is killed after 900 s.

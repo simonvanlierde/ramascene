@@ -1,4 +1,4 @@
-"""Benchmarks of the worker's own numpy work, on seeded synthetic inputs of the real shapes.
+"""Benchmarks of the worker's numpy work and the dataset hash, on seeded synthetic inputs of the real shapes.
 
 CodSpeed measures them in CI (`pytest --codspeed`); a plain `pytest` runs each once
 as a test. No engine and no dataset: EXIOBASE is 49 countries x 200 products, B has
@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pytest
 
-from ramascene_jobs.worker import INDICATORS, embodied_flows, flows_of, sha256
+from ramascene_jobs.jobs import sha256
+from ramascene_jobs.worker import INDICATORS, embodied_flows, flows_of
 
 if TYPE_CHECKING:
     from pathlib import Path

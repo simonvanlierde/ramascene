@@ -1,5 +1,6 @@
 """The API and the job runner, on a fake worker: no engine, no dataset."""
 
+import hashlib
 import json
 import math
 import sys
@@ -236,3 +237,25 @@ def test_only_the_latest_finished_jobs_are_kept(settings: Settings, catalog: Cat
             assert wait(client, ids[-1])["status"] == "succeeded"
         assert client.get(f"/jobs/{ids[0]}").status_code == 404
         assert all(client.get(f"/jobs/{i}").status_code == 200 for i in ids[1:])
+
+
+def test_dataset_files_are_hashed_once_per_process(
+    settings: Settings, catalog: Catalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two jobs, four files: four hashes, passed to the worker. A changed file is hashed again."""
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    hashed: list[str] = []
+    file_digest = hashlib.file_digest
+    monkeypatch.setattr(hashlib, "file_digest", lambda f, d: hashed.append(f.name) or file_digest(f, d))
+    year = tmp_path / "data" / "2011"  # the settings fixture's stand-ins
+    want = {n: hashlib.sha256((year / f"{n}_v4.npy").read_bytes()).hexdigest() for n in "ALYB"}
+    with TestClient(create_app(settings, runner=JobRunner(settings, FAKE_WORKER), catalog=catalog)) as client:
+        for _ in range(2):
+            job = wait(client, client.post("/jobs", json=scenario()).json()["id"])
+            assert job["result"]["echo"]["sha256"] == want
+        assert sorted(hashed) == sorted(str(year / f"{n}_v4.npy") for n in "ALYB")
+        (year / "B_v4.npy").write_bytes(b"changed, and longer")
+        job = wait(client, client.post("/jobs", json=scenario()).json()["id"])
+    assert job["result"]["echo"]["sha256"]["B"] == hashlib.sha256(b"changed, and longer").hexdigest()
+    assert len(hashed) == 5
