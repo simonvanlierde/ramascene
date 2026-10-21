@@ -24,6 +24,7 @@ dev = [
   "ruff>=0.16",
   "ty>=0.0.63",
   "httpx>=0.28", # fastapi.testclient
+  "pyarrow>=26.0.0",
 ]
 
 [build-system]

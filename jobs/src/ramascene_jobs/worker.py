@@ -120,6 +120,41 @@ def by_region(y: Any, b: Any, leontief: Any) -> dict[str, dict[str, float]]:  # 
     return out
 
 
+SECTORS = list(range(2, 17))  # global ids of the 15 level-2 product aggregates
+
+
+def section_leaves() -> list[list[int]]:
+    """The 0-based product indices of each level-2 product aggregate, in SECTORS order.
+
+    Twin of section_leaves in the explorer's precompute.py.
+    """
+    from ramascene import querymanagement as qm  # noqa: PLC0415
+    from ramascene.models import Product  # noqa: PLC0415
+
+    rows = {p.global_id: p for p in Product.objects.filter(global_id__in=SECTORS)}  # ty: ignore[unresolved-attribute]
+    return [qm.clean_local_leafs(rows[g].leaf_children_local) for g in SECTORS]
+
+
+def embodied_flows(b: Any, x: Any, indicators: list[int], leaves: list[list[int]]) -> Any:  # noqa: ANN401
+    """Flows embodied in final demand, shape (indicator, producer, section, consumer).
+
+    Twin of embodied_flows in the explorer's precompute.py. x = L . Y has one
+    column per consuming country, rows country-major. A flow is B_i . x summed
+    over the products of one section. The sections must partition the products.
+    """
+    countries = x.shape[1]
+    products = x.shape[0] // countries
+    if sorted(p for section in leaves for p in section) != list(range(products)):
+        msg = f"the sections do not partition the {products} products"
+        raise ValueError(msg)
+    out = np.empty((len(indicators), countries, len(leaves), countries))
+    for k, i in enumerate(indicators):
+        e = (b[i - 1][:, None] * x).reshape(countries, products, countries)
+        for s, section in enumerate(leaves):
+            out[k, :, s, :] = e[:, section, :].sum(axis=1)
+    return out
+
+
 def apply_model(model_details: list[dict[str, Any]], y: Any) -> tuple[Any, Any]:  # noqa: ANN401
     """(Y, L) after the intervention: consumers.py's preprocessing, then Modelling.
 
@@ -143,6 +178,15 @@ def apply_model(model_details: list[dict[str, Any]], y: Any) -> tuple[Any, Any]:
         ready["identifiers"].append(identifier)
         load_a.append(identifier != FINAL_CONSUMPTION)
     return Modelling(ready, y, load_a, YEAR, model_details).apply_model()
+
+
+def flows_of(y: Any, b: Any, leontief: Any, leaves: list[list[int]]) -> Any:  # noqa: ANN401
+    """The embodied flows for one run; L may be the engine's LeontiefSolve, so L.dot."""
+    flows = embodied_flows(b, leontief.dot(y), INDICATORS, leaves)
+    if not np.isfinite(flows).all():
+        msg = "non-finite embodied flows"
+        raise ValueError(msg)
+    return flows
 
 
 def reference_validation(y: Any, b: Any, leontief: Any) -> dict[str, Any]:  # noqa: ANN401
@@ -236,6 +280,8 @@ def run(job: dict[str, Any]) -> dict[str, Any]:
     y, b = qm.get_numpy_objects(YEAR, "Y"), qm.get_numpy_objects(YEAR, "B")
     y_s, leontief = apply_model(scenario["model_details"], y)
     scenario_results = by_region(y_s, b, leontief)
+    leaves = section_leaves()
+    scenario_flows = flows_of(y_s, b, leontief, leaves)
     validation = reference_validation(y_s, b, leontief) if scenario["reference_check"] else None
     del y_s, leontief
     gc.collect()
@@ -244,6 +290,7 @@ def run(job: dict[str, Any]) -> dict[str, Any]:
     mark = time.perf_counter()
     leontief = qm.get_numpy_objects(YEAR, "L")
     baseline = by_region(y, b, leontief)
+    baseline_flows = flows_of(y, b, leontief, leaves)
     del leontief
     gc.collect()
     timings["baseline_s"] = time.perf_counter() - mark
@@ -258,6 +305,13 @@ def run(job: dict[str, Any]) -> dict[str, Any]:
         "regions": list(next(iter(baseline.values()))),
         "indicators": [{"id": i, "name": n, "unit": units[n]} for i, n in zip(INDICATORS, names, strict=True)],
         "results": {"baseline": baseline, "scenario": scenario_results},
+        "flows": {
+            "shape": list(baseline_flows.shape),
+            "axes": ["indicator", "producer", "section", "consumer"],
+            "sections": qm.get_names_product(SECTORS),
+            "baseline": baseline_flows.ravel().tolist(),
+            "scenario": scenario_flows.ravel().tolist(),
+        },
         "reference_validation": validation,
         "provenance": {
             "engine": engine_provenance(),
