@@ -1,0 +1,46 @@
+name: codspeed
+
+# The job API's worker (jobs/tests/benchmarks), measured by CodSpeed with its
+# CPU simulation instrument, so the numbers do not depend on the runner. Runs
+# on seeded synthetic inputs; needs neither the dataset nor the engine's data.
+
+on:
+  push:
+    branches: [main]
+    paths: [jobs/**, .github/workflows/codspeed.yml]
+  pull_request:
+    paths: [jobs/**, .github/workflows/codspeed.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jobs:
+    name: job API benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # CodSpeed authenticates the upload over OIDC
+    defaults:
+      run:
+        working-directory: jobs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - run: uv sync --locked
+
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
+        with:
+          mode: simulation
+          working-directory: jobs
+          run: uv run --locked pytest tests/benchmarks --codspeed

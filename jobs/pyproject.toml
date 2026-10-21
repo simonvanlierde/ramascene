@@ -25,6 +25,7 @@ dev = [
   "ty>=0.0.63",
   "httpx>=0.28", # fastapi.testclient
   "pyarrow>=26.0.0",
+  "pytest-codspeed>=5.0.3",
 ]
 
 [build-system]

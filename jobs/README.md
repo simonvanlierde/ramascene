@@ -68,6 +68,11 @@ just check       # lint, format check, types and tests
 just up          # build and run the service in its container (compose project ramascene_jobs)
 ```
 
+`tests/benchmarks` holds benchmarks of the worker's numpy work on synthetic
+inputs of the real shapes. A plain `pytest` runs each once as a test;
+`uv run pytest tests/benchmarks --codspeed` times them, and CodSpeed measures
+them in CI (`.github/workflows/codspeed.yml`).
+
 ## License
 
 GPL-3.0-or-later, the same as the rest of RaMa-Scene; see [LICENSE](../LICENSE).
