@@ -18,7 +18,9 @@ peak RSS itself (`wait4`), returns both in the job record, and reports both as
 OpenTelemetry histograms (`ramascene_jobs.job.duration`,
 `ramascene_jobs.job.peak_rss`) and a `ramascene_jobs.job` span when
 `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Jobs live in
-memory: a restart forgets them. At most 4 jobs wait; a job is killed after 900 s.
+memory: a restart forgets them, and only the latest 20 finished jobs are kept
+(a result with flows takes about 7 MB), so older ones answer 404. At most 4
+jobs wait; a job is killed after 900 s.
 Browsers may call the API from loopback origins (`http://127.0.0.1:<port>`,
 `http://localhost:<port>`) only.
 

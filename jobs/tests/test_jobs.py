@@ -221,3 +221,18 @@ def test_the_result_carries_the_flows_and_gzip_shrinks_them(client: TestClient) 
     assert zipped.json()["result"]["flows"] == flows
     plain = client.get(f"/jobs/{job_id}", headers={"Accept-Encoding": "identity"})
     assert "content-encoding" not in plain.headers
+
+
+def test_only_the_latest_finished_jobs_are_kept(settings: Settings, catalog: Catalog) -> None:
+    """A result with flows is a few MB, so finished jobs beyond keep_finished are dropped, oldest first."""
+    runner = JobRunner(settings, FAKE_WORKER)
+    runner.keep_finished = 2
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    with TestClient(create_app(settings, runner=runner, catalog=catalog)) as client:
+        ids = []
+        for label in ("first", "second", "third"):
+            ids.append(client.post("/jobs", json=scenario(label)).json()["id"])
+            assert wait(client, ids[-1])["status"] == "succeeded"
+        assert client.get(f"/jobs/{ids[0]}").status_code == 404
+        assert all(client.get(f"/jobs/{i}").status_code == 200 for i in ids[1:])

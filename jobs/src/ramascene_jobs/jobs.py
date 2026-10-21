@@ -98,6 +98,10 @@ def run_process(command: Sequence[str], job: dict[str, Any], timeout_s: float) -
 class JobRunner:
     """Accepts jobs, runs them one at a time on a daemon thread."""
 
+    # A result with flows holds about 7 MB of Python floats, so only the latest
+    # finished jobs are kept; older ones answer 404.
+    keep_finished = 20
+
     def __init__(self, settings: Settings, command: Sequence[str] = WORKER) -> None:
         self.settings = settings
         self.command = list(command)
@@ -164,6 +168,10 @@ class JobRunner:
                 logger.exception("job %s", job.id)
                 if job.finished_at is None:
                     job.status, job.error, job.finished_at = FAILED, f"{type(e).__name__}: {e}", now()
+            with self.lock:
+                finished = [i for i, j in self.jobs.items() if j.finished_at is not None]  # oldest first
+                for old in finished[: -self.keep_finished]:
+                    del self.jobs[old]
 
     def _run(self, job: Job) -> None:
         settings = self.settings
