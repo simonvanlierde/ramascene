@@ -134,8 +134,8 @@ REGENERATE_GOLDEN=1 pytest -k golden   # rewrites synthetic_golden.json; the cas
 ## Benchmarks
 
 `ramascene/tests/test_bench_engine.py` times the scenario solve (Woodbury
-update and full factorization, on 500 x 500 matrices) and each synthetic route
-case (on the 9800 x 9800 synthetic `L`), and checks each result as above. A
+update and full factorization, on 500 x 500 matrices) and checks each result
+against a direct solve. A
 plain `pytest` runs each once as a test; `pytest ramascene/tests/test_bench_engine.py
 --codspeed` times them, and CodSpeed measures them in CI
 (`.github/workflows/codspeed.yml`).

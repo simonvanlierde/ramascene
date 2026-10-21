@@ -110,5 +110,5 @@ Both absolute numbers need a rerun on an idle machine before they are quoted.
 CodSpeed measures the hot paths on every pull request
 (`.github/workflows/codspeed.yml`), on synthetic inputs of the real shapes:
 the worker's embodied flows and dataset hash (`jobs/tests/benchmarks`), and
-the engine's scenario solve, Woodbury and full factorization, and its four
-routes (`ramascene/tests/test_bench_engine.py`).
+the engine's scenario solve, Woodbury and full factorization
+(`ramascene/tests/test_bench_engine.py`).
