@@ -26,7 +26,6 @@ from ramascene.tests.validation_data import FILES_TO_TEST_AGAINST, VALIDATION_DI
 COUNTRY_CNT = 49
 PRODUCT_CNT = 200
 MATRIX_ROWS = COUNTRY_CNT * PRODUCT_CNT
-INDICATOR_ROWS = 60  # enough for every indicator global id in the fixtures
 VALIDATION_YEAR = 2011
 
 # Same dispatch as tasks.execute_calc.
@@ -102,22 +101,6 @@ def test_low_rank_update_matches_full_solve(real_matrices):
     full = LeontiefSolve(np.eye(MATRIX_ROWS) - A)
     for got, want in ((update.dot(Y), full.dot(Y)), (update.T.dot(Y[:, :1]), full.T.dot(Y[:, :1]))):
         np.testing.assert_allclose(got, want, rtol=0, atol=1e-12 * np.abs(want).max())
-
-
-@pytest.fixture(scope="session")
-def synthetic_matrices():
-    """Stand-ins with the real shapes and dtype. L is dense, non-symmetric and
-    diagonally dominant, so a slip that swaps rows for columns, L for L.T or
-    the order of a product changes the result; an identity L would hide all
-    three. Built without an inversion, so it costs one 9800x9800 allocation.
-    """
-    rng = np.random.default_rng(20260926)
-    Y = rng.random((MATRIX_ROWS, COUNTRY_CNT))
-    B = rng.random((INDICATOR_ROWS, MATRIX_ROWS))
-    L = rng.random((MATRIX_ROWS, MATRIX_ROWS))
-    L *= 1e-3
-    L[np.diag_indices(MATRIX_ROWS)] += 1.0
-    return Y, B, L
 
 
 def read_query(filename):

@@ -26,8 +26,12 @@ iniconfig==2.3.0
     # via pytest
 jinja2==3.1.6
     # via sphinx
+markdown-it-py==4.2.0
+    # via rich
 markupsafe==3.0.3
     # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
 packaging==26.3
     # via
     #   -c requirements.txt
@@ -38,13 +42,17 @@ pluggy==1.6.0
 pygments==2.21.0
     # via
     #   pytest
+    #   rich
     #   sphinx
 pytest==9.1.1
     # via
     #   -r requirements-dev.in
     #   pytest-asyncio
+    #   pytest-codspeed
     #   pytest-django
 pytest-asyncio==1.4.0
+    # via -r requirements-dev.in
+pytest-codspeed==5.0.3
     # via -r requirements-dev.in
 pytest-django==4.14.0
     # via -r requirements-dev.in
@@ -52,6 +60,8 @@ requests==2.34.2
     # via
     #   -c requirements.txt
     #   sphinx
+rich==15.0.0
+    # via pytest-codspeed
 roman-numerals==4.1.0
     # via sphinx
 snowballstemmer==3.1.1

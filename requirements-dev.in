@@ -3,6 +3,7 @@
 -c requirements.txt
 pytest>=8
 pytest-django>=4.9
+pytest-codspeed>=5
 pytest-asyncio>=0.24
 websockets>=13
 Sphinx>=8
