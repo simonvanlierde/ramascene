@@ -5,8 +5,8 @@ Deselected by default (`-m "not engine"` in pyproject.toml). Each job peaks near
 
     DATASETS_DIR=/path/to/datasets DATASETS_VERSION=v4 uv run pytest -m engine -s
 
-EXPLORER_RESULTS points at the explorer's committed data/results.json (default:
-the sibling checkout).
+EXPLORER_RESULTS points at the explorer's committed data/results.json and
+EXPLORER_EMBODIED at its data/embodied.parquet (default: the sibling checkout).
 """
 
 import json
@@ -16,6 +16,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import pyarrow.parquet as pq
 import pytest
 from fastapi.testclient import TestClient
 
@@ -30,8 +32,14 @@ pytestmark = pytest.mark.engine
 EXPLORER_RESULTS = Path(
     os.environ.get("EXPLORER_RESULTS") or Path(__file__).parents[3] / "ramascene-explorer" / "data" / "results.json"
 )
+EXPLORER_EMBODIED = Path(
+    os.environ.get("EXPLORER_EMBODIED")
+    or Path(__file__).parents[3] / "ramascene-explorer" / "data" / "embodied.parquet"
+)
 GATE = "steel-in-vehicles-europe"
 REL = 1e-9
+# The Parquet stores float32: about 6e-8 relative per cell.
+FLOWS_REL = 1e-6
 # The explorer's absolute floor (precompute.ABS_FLOOR), for values that should be 0.
 ABS_FLOOR = 1e-9
 # PR 2 (solve instead of invert) measured 1.65-1.69 GB; the inverting engine 3.97 GB.
@@ -92,11 +100,18 @@ def max_relative_difference(got: dict[str, dict[str, float]], want: dict[str, di
     return worst
 
 
-def test_steel_in_vehicles_reproduces_the_explorer(client: TestClient, explorer: dict[str, Any]) -> None:
-    """The explorer's steel-into-vehicles -20% scenario, as it defines it, through the API."""
+@pytest.fixture(scope="module")
+def gate_job(client: TestClient, explorer: dict[str, Any]) -> dict[str, Any]:
+    """The explorer's steel-into-vehicles -20% scenario, as it defines it, run once for the module."""
     [definition] = [s for s in explorer["scenarios"] if s["id"] == GATE]
     job = run_job(client, {"label": definition["label"], "model_details": definition["model_details"]})
     assert job["status"] == "succeeded", job["error"]
+    return job
+
+
+def test_steel_in_vehicles_reproduces_the_explorer(gate_job: dict[str, Any], explorer: dict[str, Any]) -> None:
+    """The job's numbers against the explorer's committed results."""
+    job = gate_job
     result = job["result"]
     assert result["regions"] == explorer["regions"]
     assert [i["id"] for i in result["indicators"]] == [i["id"] for i in explorer["indicators"]]
@@ -128,3 +143,47 @@ def test_zero_change_reproduces_the_octave_references(client: TestClient, explor
     scenario, baseline = job["result"]["results"]["scenario"], job["result"]["results"]["baseline"]
     assert max_relative_difference(scenario, baseline) <= 1e-9
     assert all(math.isfinite(v) for regions in scenario.values() for v in regions.values())
+
+
+def test_flows_reproduce_the_explorer_parquet(gate_job: dict[str, Any]) -> None:
+    """Absolute baseline flows, and scenario minus baseline, against embodied.parquet (float32)."""
+    if not EXPLORER_EMBODIED.is_file():
+        pytest.skip(f"no explorer flows at {EXPLORER_EMBODIED}; set EXPLORER_EMBODIED")
+    file = pq.ParquetFile(EXPLORER_EMBODIED)
+    meta = json.loads(file.schema_arrow.metadata[b"ramascene"])
+    assert {i["scale"] for i in meta["indicators"]} == {1}  # stored value = value x scale, so scale 1 is unscaled
+    flows = gate_job["result"]["flows"]
+    shape = tuple(flows["shape"])
+    assert shape == (3, 49, 15, 49)
+    baseline = np.array(flows["baseline"]).reshape(shape)
+    scenario = np.array(flows["scenario"]).reshape(shape)
+    ids = [i["id"] for i in gate_job["result"]["indicators"]]
+    groups = {file.metadata.row_group(g).column(0).statistics.min: g for g in range(file.metadata.num_row_groups)}
+
+    def cells(run: str, absolute: np.ndarray) -> np.ndarray:
+        """The stored run as a dense array; omitted cells are 0."""
+        table = file.read_row_group(groups[run]).to_pydict()
+        want = np.zeros(shape)
+        index = (
+            [ids.index(i) for i in table["indicator"]],
+            table["producer"],
+            table["section"],
+            table["consumer"],
+        )
+        want[index] = table["value"]
+        assert want.shape == absolute.shape
+        return want
+
+    worst = 0.0
+    for run, got, want in (
+        ("baseline", baseline, cells("baseline", baseline)),
+        (GATE, scenario - baseline, cells(GATE, scenario)),
+    ):
+        for k, indicator in enumerate(ids):
+            floor = FLOWS_REL * np.abs(baseline[k]).max()
+            diff = np.abs(got[k] - want[k])
+            assert (diff <= FLOWS_REL * np.abs(want[k]) + floor).all(), (run, indicator, diff.max())
+            total = abs(got[k].sum() - want[k].sum()) / max(abs(want[k].sum()), floor)
+            assert total <= FLOWS_REL, (run, indicator, total)
+            worst = max(worst, (diff / np.maximum(np.abs(want[k]), floor)).max())
+    print(f"worst relative flows difference vs explorer parquet: {worst:.3e}")  # noqa: T201

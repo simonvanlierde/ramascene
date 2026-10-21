@@ -1,6 +1,7 @@
 """The API and the job runner, on a fake worker: no engine, no dataset."""
 
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -205,3 +206,33 @@ def test_job_span_and_metrics(settings: Settings, catalog: Catalog) -> None:
     [rss] = points["ramascene_jobs.job.peak_rss"]
     assert rss.max == job["peak_rss_bytes"]  # ty: ignore[unresolved-attribute]
     assert "ramascene_jobs.job.duration" in points
+
+
+def test_the_result_carries_the_flows_and_gzip_shrinks_them(client: TestClient) -> None:
+    """The flows have their documented shape, and a gzip Accept-Encoding gets a gzipped body."""
+    job_id = client.post("/jobs", json=scenario()).json()["id"]
+    flows = wait(client, job_id)["result"]["flows"]
+    assert flows["axes"] == ["indicator", "producer", "section", "consumer"]
+    cells = math.prod(flows["shape"])
+    assert len(flows["baseline"]) == len(flows["scenario"]) == cells
+    assert len(flows["sections"]) == flows["shape"][2]
+    zipped = client.get(f"/jobs/{job_id}", headers={"Accept-Encoding": "gzip"})
+    assert zipped.headers["content-encoding"] == "gzip"
+    assert zipped.json()["result"]["flows"] == flows
+    plain = client.get(f"/jobs/{job_id}", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers
+
+
+def test_only_the_latest_finished_jobs_are_kept(settings: Settings, catalog: Catalog) -> None:
+    """A result with flows is a few MB, so finished jobs beyond keep_finished are dropped, oldest first."""
+    runner = JobRunner(settings, FAKE_WORKER)
+    runner.keep_finished = 2
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    with TestClient(create_app(settings, runner=runner, catalog=catalog)) as client:
+        ids = []
+        for label in ("first", "second", "third"):
+            ids.append(client.post("/jobs", json=scenario(label)).json()["id"])
+            assert wait(client, ids[-1])["status"] == "succeeded"
+        assert client.get(f"/jobs/{ids[0]}").status_code == 404
+        assert all(client.get(f"/jobs/{i}").status_code == 200 for i in ids[1:])

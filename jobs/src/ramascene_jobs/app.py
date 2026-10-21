@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from ramascene_jobs import telemetry as otel
@@ -111,5 +112,6 @@ def create_app(
         allow_headers=["Content-Type"],
         expose_headers=["Location"],
     )
+    app.add_middleware(GZipMiddleware, minimum_size=1000)  # a job result with flows is a few MB of JSON
     telemetry.instrument(app)
     return app

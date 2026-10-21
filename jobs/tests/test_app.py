@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.testclient import TestClient
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -44,7 +45,7 @@ def test_telemetry_is_off_without_an_endpoint(env: dict[str, str]) -> None:
     assert not telemetry.enabled
     app = create_app(settings, telemetry)
     # No OTel middleware in the stack: nothing is recorded, not merely nothing sent.
-    assert [m.cls for m in app.user_middleware] == [CORSMiddleware]
+    assert [m.cls for m in app.user_middleware] == [GZipMiddleware, CORSMiddleware]
 
 
 def test_telemetry_records_a_span_and_the_request_duration() -> None:
