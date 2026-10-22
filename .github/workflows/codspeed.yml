@@ -1,0 +1,76 @@
+name: codspeed
+
+# The job API's worker (jobs/tests/benchmarks) and the engine's scenario solve
+# and routes (ramascene/tests/test_bench_engine.py), measured by CodSpeed with
+# its CPU simulation instrument, so the numbers do not depend on the runner.
+# Both run on seeded synthetic inputs; neither needs the EXIOBASE dataset.
+
+on:
+  push:
+    branches: [main]
+    paths: [jobs/**, ramascene/**, conftest.py, pytest.ini, requirements*.txt, .github/workflows/codspeed.yml]
+  pull_request:
+    paths: [jobs/**, ramascene/**, conftest.py, pytest.ini, requirements*.txt, .github/workflows/codspeed.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  job-api:
+    name: job API benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # CodSpeed authenticates the upload over OIDC
+    defaults:
+      run:
+        working-directory: jobs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - run: uv sync --locked
+
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
+        with:
+          mode: simulation
+          working-directory: jobs
+          run: uv run --locked pytest tests/benchmarks --codspeed
+
+  engine:
+    name: engine benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # CodSpeed authenticates the upload over OIDC
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same Python and locked set as offline-tests.yml.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da # v5.5.0
+        # The simulation runs threads one at a time, so OpenBLAS's spinning
+        # worker threads stall it: two 500 x 500 solves passed 14 minutes.
+        env:
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+        with:
+          mode: simulation
+          run: pytest ramascene/tests/test_bench_engine.py --codspeed

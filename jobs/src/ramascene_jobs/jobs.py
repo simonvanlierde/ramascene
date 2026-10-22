@@ -6,6 +6,7 @@ child is killed before it can report anything.
 """
 
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -68,6 +69,12 @@ class Outcome:
     output: dict[str, Any] | None
 
 
+def sha256(path: Path) -> str:
+    """Of one dataset file, so a result names the exact matrices it came from."""
+    with path.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
 class QueueFullError(Exception):
     """More jobs are waiting than the service accepts."""
 
@@ -106,6 +113,8 @@ class JobRunner:
         self.settings = settings
         self.command = list(command)
         self.jobs: dict[str, Job] = {}
+        # By (path, size, mtime): hashing the four files takes ~0.7 s, so once per process, again if one changes.
+        self.hashes: dict[tuple[str, int, int], str] = {}
         self.pending: queue.Queue[str | None] = queue.Queue()
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._loop, name="job-runner", daemon=True)
@@ -158,7 +167,24 @@ class JobRunner:
         """The job, or None."""
         return self.jobs.get(job_id)
 
+    def dataset_hashes(self) -> dict[str, str]:
+        """SHA-256 of $DATASETS_DIR/2011/{A,L,Y,B}_$DATASETS_VERSION.npy, the engine's one year."""
+        out = {}
+        for n in "ALYB":
+            path = Path(self.settings.datasets_dir or "") / "2011" / f"{n}_{self.settings.datasets_version}.npy"
+            stat = path.stat()
+            key = (str(path), stat.st_size, stat.st_mtime_ns)
+            if key not in self.hashes:
+                self.hashes[key] = sha256(path)
+            out[n] = self.hashes[key]
+        return out
+
     def _loop(self) -> None:
+        if self.settings.datasets_dir is not None:
+            try:  # before the first job, so it does not wait for the hashes
+                self.dataset_hashes()
+            except OSError:
+                logger.exception("hashing the dataset files")
         while (job_id := self.pending.get()) is not None:
             self.queued.add(-1)
             job = self.jobs[job_id]
@@ -179,13 +205,17 @@ class JobRunner:
             span.set_attribute("job.id", job.id)
             span.set_attribute("job.steps", len(job.scenario["model_details"]))
             job.status, job.started_at = "running", now()
-            payload = {
-                "scenario": job.scenario,
-                "datasets_dir": str(settings.datasets_dir),
-                "datasets_version": settings.datasets_version,
-                "engine_db": str(settings.engine_db),
-            }
             try:
+                mark = time.perf_counter()
+                hashes = self.dataset_hashes()
+                payload = {
+                    "scenario": job.scenario,
+                    "datasets_dir": str(settings.datasets_dir),
+                    "datasets_version": settings.datasets_version,
+                    "engine_db": str(settings.engine_db),
+                    "sha256": hashes,
+                    "hash_s": time.perf_counter() - mark,
+                }
                 outcome = run_process(self.command, payload, settings.job_timeout_s)
             except Exception as e:  # noqa: BLE001 - the job fails, the runner goes on
                 outcome = Outcome(-1, 0.0, 0, {"error": f"{type(e).__name__}: {e}"})

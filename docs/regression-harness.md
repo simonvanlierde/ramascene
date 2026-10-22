@@ -130,3 +130,12 @@ review pass whatever that code computes.
 ```text
 REGENERATE_GOLDEN=1 pytest -k golden   # rewrites synthetic_golden.json; the cases report as skipped
 ```
+
+## Benchmarks
+
+`ramascene/tests/test_bench_engine.py` times the scenario solve (Woodbury
+update and full factorization, on 500 x 500 matrices) and checks each result
+against a direct solve. A
+plain `pytest` runs each once as a test; `pytest ramascene/tests/test_bench_engine.py
+--codspeed` times them, and CodSpeed measures them in CI
+(`.github/workflows/codspeed.yml`).

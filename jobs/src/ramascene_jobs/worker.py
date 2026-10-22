@@ -13,7 +13,6 @@ therefore directly comparable with the explorer's data/results.json.
 """
 
 import gc
-import hashlib
 import json
 import math
 import os
@@ -261,19 +260,12 @@ def engine_provenance() -> dict[str, Any]:
     }
 
 
-def sha256(path: Path) -> str:
-    """Of one dataset file, so a result names the exact matrices it came from."""
-    with path.open("rb") as f:
-        return hashlib.file_digest(f, "sha256").hexdigest()
-
-
 def run(job: dict[str, Any]) -> dict[str, Any]:
     """Scenario, then baseline, one after the other so their matrices never overlap."""
     import django  # noqa: PLC0415
     from ramascene import querymanagement as qm  # noqa: PLC0415
 
     scenario = job["scenario"]
-    datasets_dir = Path(job["datasets_dir"])
     timings: dict[str, float] = {}
     started = time.perf_counter()
 
@@ -298,9 +290,7 @@ def run(job: dict[str, Any]) -> dict[str, Any]:
     names = qm.get_names_indicator(INDICATORS)
     units = qm.get_indicator_units(INDICATORS)
     suffix = job["datasets_version"]
-    mark = time.perf_counter()
-    hashes = {n: sha256(datasets_dir / str(YEAR) / f"{n}_{suffix}.npy") for n in "ALYB"}
-    timings["hash_s"] = time.perf_counter() - mark
+    timings["hash_s"] = job["hash_s"]  # the API hashes the files, once per process
     return {
         "regions": list(next(iter(baseline.values()))),
         "indicators": [{"id": i, "name": n, "unit": units[n]} for i, n in zip(INDICATORS, names, strict=True)],
@@ -315,7 +305,7 @@ def run(job: dict[str, Any]) -> dict[str, Any]:
         "reference_validation": validation,
         "provenance": {
             "engine": engine_provenance(),
-            "dataset": {**DATASET, "file_suffix": suffix, "sha256": hashes},
+            "dataset": {**DATASET, "file_suffix": suffix, "sha256": job["sha256"]},
             "python": platform.python_version(),
             "numpy": np.__version__,
             "django": django.get_version(),

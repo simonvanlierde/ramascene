@@ -31,7 +31,11 @@ def catalog() -> Catalog:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    """Engine configured (paths the fake worker never opens)."""
+    """Engine configured, with four small stand-ins for the dataset files."""
+    year = tmp_path / "data" / "2011"
+    year.mkdir(parents=True)
+    for n in "ALYB":
+        (year / f"{n}_v4.npy").write_bytes(n.encode() * 1000)
     return Settings(
         datasets_dir=tmp_path / "data",
         engine_db=tmp_path / "db.sqlite3",
