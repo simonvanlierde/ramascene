@@ -5,6 +5,7 @@ RaMa-Scene is a **Django 5.2** web application for analyzing Environmentally Ext
 Demo version: http://cml.liacs.nl:8080/ramascene/
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/simonvanlierde/ramascene?utm_source=badge)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](resources/docs/CONTRIBUTING.md)
 
 # Developers Guide
@@ -107,6 +108,11 @@ pytest -v -rs
 ```
 The tests that check the engine against the Octave reference values skip until the
 EXIOBASE matrices are in place. See [docs/regression-harness.md](docs/regression-harness.md).
+
+The plain run also runs each benchmark once as a test. [CodSpeed](https://codspeed.io) measures
+them on every pull request (`.github/workflows/codspeed.yml`):
+the engine's scenario solve, analysis routes and selection expansion
+(`ramascene/tests/test_bench_engine.py`), and the job API worker (`jobs/tests/benchmarks`).
 
 ---
 
