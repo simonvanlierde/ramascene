@@ -1,6 +1,6 @@
 # Performance
 
-DRAFT. How fast a scenario job is, and what made it so. Every number says what
+How fast a scenario job is, and what made it so. Every number says what
 it measured and where it comes from. The 2011 EXIOBASE v3.3.sm matrices are
 9800 x 9800 (49 countries x 200 products); A and L are 733 MB each on disk.
 
@@ -87,23 +87,33 @@ threads). The GPU is 3x faster on a factorization, but a scenario job no
 longer factorizes: the Woodbury update takes 0.28 s, and float32, where the
 GPU is much faster, fails the Octave tolerance. So there is no GPU path.
 
-The 1.82 s and 0.62 s are not anchored: that run did not record the CPU's
-BLAS library or thread count. A rerun on 2026-10-21 on the same workstation
-(Intel Core i9-14900KF, 8 performance and 16 efficiency cores, 32 threads;
-scipy 1.18.1 with OpenBLAS 0.3.34, scipy-openblas build; CuPy 14.2 with
-cuSOLVER on the GPU; median of 5) did not reproduce them, because another
-process kept the GPU at 100% and the CPU was not idle (load average 5 to 15):
+The 1.82 s and 0.62 s did not record the CPU's BLAS library or thread count,
+so they are not anchored. A rerun on 2026-10-22 replaces them. It ran on a
+benchmark machine with an i9-14900KF (8 performance and 16 efficiency cores,
+32 threads) and an RTX 4090, idle when it started (load average under 2, GPU
+at 0%). Python 3.12.3, numpy 2.5.4, scipy 1.18.1, CuPy 14.2.0 (CUDA runtime
+12.9, cuSOLVER on the GPU). The system is the one above: n = 9800, a random A
+with column sums below 1, 49 right-hand sides, float64. Each time is the
+median of 5 runs after one warm-up run:
 
-| BLAS threads | CPU solve | GPU solve | GPU solve with host copies |
+| OpenBLAS threads | CPU solve | GPU solve | GPU solve with host copies |
 | --- | --- | --- | --- |
-| 8 | 3.73 s | 1.20 s | 1.29 s |
-| 16 | 3.01 s | 1.23 s | 1.34 s |
-| 32 | 5.13 s | 1.23 s | 1.34 s |
+| 8 | 1.725 s | 0.623 s | 0.684 s |
+| 16 | 2.180 s | 0.623 s | 0.684 s |
+| 32 | 1.767 s | 0.623 s | 0.684 s |
 
-The GPU stays 2.5 to 4 times faster, and the CPU and GPU solutions agree to
-6e-15 relative, so the conclusion holds. On this hybrid CPU more BLAS threads
-than performance cores can be slower: 32 threads took 5.1 s, 16 took 3.0 s.
-Both absolute numbers need a rerun on an idle machine before they are quoted.
+The GPU is 2.8 to 3.5 times faster than the CPU (0.623 s against 1.725 to
+2.180 s), or 2.5 to 3.2 times with the host copies. The CPU and GPU solutions
+agree to 7e-15 relative at the worst (7.2e-15, 7.1e-15 and 6.2e-15 in the
+three runs). So the conclusion holds: the GPU wins on a factorization, and a
+job no longer factorizes.
+
+The CPU time does not fall with more threads: 8 was fastest and 16 slowest.
+At 32 threads one of the 5 runs took 3.323 s, so that row is the least settled.
+
+The CPU solve is `scipy.linalg.solve`, so it runs on scipy's bundled OpenBLAS
+(0.3.34); numpy's own build (0.3.31.dev) was loaded too but does not do this
+call. `OPENBLAS_NUM_THREADS` sets the thread count for both.
 
 ## Benchmarks
 
